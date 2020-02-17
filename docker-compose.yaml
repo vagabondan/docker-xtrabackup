@@ -1,0 +1,18 @@
+version: "3.3"
+
+services:
+  percona-backup:
+    build: .
+    image: vagabondan/xtrabackup
+    restart: unless-stopped
+    volumes:
+      - /Users/Strannix/Structure/projects/docker/percona/zbx_env/var/lib/mysql:/var/lib/mysql:rw
+      - ./backup:/backups:rw
+      - ./backup/crontab:/etc/crontabs/crontab:ro
+    networks:
+      - percona
+  
+networks:
+  percona:
+    external: 
+      name: zbx_net_frontend
