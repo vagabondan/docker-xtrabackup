@@ -14,5 +14,3 @@ services:
   
 networks:
   percona:
-    external: 
-      name: zbx_net_frontend

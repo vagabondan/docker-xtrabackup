@@ -66,7 +66,7 @@ BACKUP_GZIP_THREADS=4
 
 ## Remove logs older than the specifier below
 ## see "man find" for mtime prameter for possible values 
-LOGS_REMOVE_PERIOD=14d
+LOGS_REMOVE_PERIOD=14
 EOF
 
 	die "Configuration has been initialised in $CONFIG_FILE. \nPlease make sure all settings are correctly defined/customised - aborting."

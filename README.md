@@ -44,8 +44,6 @@ services:
 networks:
   # define external network with DB host if you want to interact with DB through <service>:<port> rather than unix socket
   percona:
-    external:
-      name: zbx_net_frontend
 ```
 
 and then run:
