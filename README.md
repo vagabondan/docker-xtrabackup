@@ -32,6 +32,8 @@ services:
     image: vagabondan/xtrabackup
     restart: unless-stopped
     volumes:
+        # set date and timezone equals to host
+      - /etc/localtime:/etc/localtime:ro
         # mysql data dir
       - /storage/mysql-server/datadir:/var/lib/mysql:rw
         # /backups - folder inside container where backup files and logs are written to

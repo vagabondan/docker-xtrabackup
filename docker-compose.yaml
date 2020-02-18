@@ -6,6 +6,7 @@ services:
     image: vagabondan/xtrabackup
     restart: unless-stopped
     volumes:
+      - /etc/localtime:/etc/localtime:ro
       - /storage/mysql-server/datadir:/var/lib/mysql:rw
       - ./backup:/backups:rw
       - ./backup/crontab:/etc/crontabs/crontab:ro
