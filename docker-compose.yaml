@@ -7,9 +7,9 @@ services:
     restart: unless-stopped
     volumes:
       - /etc/localtime:/etc/localtime:ro
-      - /storage/mysql-server/datadir:/var/lib/mysql:rw
-      - ./backup:/backups:rw
-      - ./backup/crontab:/etc/crontabs/crontab:ro
+      - /Users/Strannix/Structure/projects/docker/percona/zbx_env/var/lib/mysql:/var/lib/mysql:rw
+      - ./backups:/backups:rw
+      - ./backups/crontab:/etc/crontabs/crontab:ro
     networks:
       - percona
   
