@@ -28,19 +28,18 @@ if [ -f $CONFIG_FILE ]; then
 	source $CONFIG_FILE
 else
 cat << EOF > $CONFIG_FILE
+######## BACKUP SECTION ######################################
 MYSQL_USER="$(whoami)"
 MYSQL_PASS=
 MYSQL_DATA_DIR=/var/lib/mysql/
 
-##############################################################
-## You can choose to use host:port or unix socket connection
-## host:port is used by default
-MYSQL_HOST=mysql-host
-MYSQL_PORT=3306
-################
-## But you can uncomment the following variable and use unix socket connection instead
-# MYSQL_SOCKET=/var/lib/mysql/mysql.sock
-#################################################################
+###
+## You can choose to use unix socket connection or host:port
+## Unix socket connection is preferable
+MYSQL_SOCKET=/var/lib/mysql/mysql.sock
+# MYSQL_HOST=mysql-host
+# MYSQL_PORT=3306
+###
 
 BACKUP_DIRECTORY=/backups/percona-backups
 BACKUP_MAX_CHAINS=8
@@ -74,11 +73,13 @@ BACKUP_GZIP_THREADS=4
 ## see "man find" for mtime prameter for possible values 
 LOGS_REMOVE_PERIOD=14
 
-
+###############################################################
+##
+######## RESTORE SECTION ######################################
 ## Restore mode
 ## Possible values: 
 ## full - restore data in a new data base, you should then define RESTORE_* variables
-## files_only - only prepares files from backup for further manual restoration
+## any other value - only prepares files from backup for further manual restoration
 RESTORE_MODE=full
 
 RESTORE_MYSQL_DATA_DIR=/restore/mysql/
@@ -86,15 +87,13 @@ RESTORE_MYSQL_DATA_DIR=/restore/mysql/
 RESTORE_MYSQL_USER="$(whoami)"
 RESTORE_MYSQL_PASS=
 
-##############################################################
-## You can choose to use host:port or unix socket connection
-## host:port is used by default
-RESTORE_MYSQL_HOST=mysql-host-restore
-RESTORE_MYSQL_PORT=3306
-################
-## But you can uncomment the following variable and use unix socket connection instead
+###
+## You can choose to use unix socket connection or host:port
+## Unix socket connection is preferable
 RESTORE_MYSQL_SOCKET=/restore/mysql/mysql.sock
-#################################################################
+# RESTORE_MYSQL_HOST=mysql-host-restore
+# RESTORE_MYSQL_PORT=3306
+###
 
 EOF
 
@@ -212,21 +211,28 @@ function import_tables(){
 	## Restore MySQL
 	[ -z "$1" ] && die "import_tables function requires \$1 argument as tables list to import"
 	[ -z "${RESTORE_MYSQL_OPTIONS}" ] && die "\${RESTORE_MYSQL_OPTIONS} is not defined"
+	echo "\$1: $1"
 	echo "\${RESTORE_MYSQL_OPTIONS}: ${RESTORE_MYSQL_OPTIONS}"
 	local tables_list=$1
 	local tn
 	local ts
+
+	# echo "Disable foreign key checks"
+	# echo "SET FOREIGN_KEY_CHECKS=0;" | ${MYSQL_COMMAND} ${RESTORE_MYSQL_OPTIONS} -N
+
 	for t in $tables_list ; do
 		unset tn; unset ts;
 		tn=${t%.*} ; tn=${tn##*/} ; 
 		ts=${t%/*} ; ts=${ts##*/} ;
 		([ -z "$tn" ] || [ -z "$ts" ]) && echo "Warning! Couldn't resolve schema/table name for ${t}: schema='$ts' table='$tn'"  
 		echo "Importing schema: $ts table: $tn"
+
+		echo "Disable foreign key checks"
 		
 		#######################
 		# For instructions see: https://www.percona.com/doc/percona-xtrabackup/2.1/innobackupex/restoring_individual_tables_ibk.html
 		echo "ALTER TABLE ${ts}.${tn} DISCARD TABLESPACE;"
-		echo "ALTER TABLE ${ts}.${tn} DISCARD TABLESPACE;" | ${MYSQL_COMMAND} ${RESTORE_MYSQL_OPTIONS} -N
+		echo "SET FOREIGN_KEY_CHECKS=0; ALTER TABLE ${ts}.${tn} DISCARD TABLESPACE;" | ${MYSQL_COMMAND} ${RESTORE_MYSQL_OPTIONS} -N &>>$LOG_FILE || fail
 		
 		echo "Copy files exp, ibd, cfg files from backup"
 		# create subdir with schema just for any case
@@ -234,9 +240,13 @@ function import_tables(){
 		cp ${t%.*}.{exp,ibd,cfg} $RESTORE_MYSQL_DATA_DIR/$ts/
 
 		echo "ALTER TABLE ${ts}.${tn} IMPORT TABLESPACE;"
-		echo "ALTER TABLE ${ts}.${tn} IMPORT TABLESPACE;" | ${MYSQL_COMMAND} ${RESTORE_MYSQL_OPTIONS} -N
+		echo "SET FOREIGN_KEY_CHECKS=0; ALTER TABLE ${ts}.${tn} IMPORT TABLESPACE;" | ${MYSQL_COMMAND} ${RESTORE_MYSQL_OPTIONS} -N &>>$LOG_FILE || fail
 		#######################
 	done
+
+	echo "Enable foreign key checks"
+	echo "SET FOREIGN_KEY_CHECKS=1;" | ${MYSQL_COMMAND} ${RESTORE_MYSQL_OPTIONS} -N &>>$LOG_FILE || fail
+
 	return 0
 }
 
@@ -302,7 +312,7 @@ full_backup () {
 		fi
 
 		# backup tables list file if exists
-		[ -z "$BACKUP_TABLES_LIST_FILE" ] || cp $BACKUP_TABLES_LIST_FILE $NEW_BACKUP_DIR/
+		[ -z "$BACKUP_TABLES_LIST_FILE" ] || cp $BACKUP_TABLES_LIST_FILE $NEW_BACKUP_DIR/.tables_list
 
 		echo "Finished full backup"
 	else
@@ -390,23 +400,7 @@ elif [ "$1" = "list" ]; then
 	fi
 elif [ "$1" = "restore" ]; then
 	[ -n "$2" ] || die "Missing arguments. Please run as: \n\t$0 restore <timestamp> [<destination folder>]\nTo see the list of the available backups, run:\n\t$0 list"
-	## Check RESTORE_MYSQL
-	[ -d $RESTORE_MYSQL_DATA_DIR ] || die "Please ensure the RESTORE_MYSQL_DATA_DIR setting in the configuration file points to the directory containing the MySQL databases."
-	[ -n "$RESTORE_MYSQL_USER" -a -n "$RESTORE_MYSQL_PASS" ] || die "Please ensure RESTORE_MYSQL username and password are properly set in the configuration file."
-
-	RESTORE_MYSQL_CNF=/restore/.my.cnf
-	echo -e "[client]\n user = $RESTORE_MYSQL_USER \n password = $RESTORE_MYSQL_PASS" > $RESTORE_MYSQL_CNF
-	RESTORE_MYSQL_OPTIONS="--defaults-extra-file=$RESTORE_MYSQL_CNF" # "--user=$MYSQL_USER --password=$MYSQL_PASS"
-	if [ -z "$RESTORE_MYSQL_SOCKET" ]; then # unset or empty
-		RESTORE_MYSQL_OPTIONS="$RESTORE_MYSQL_OPTIONS \
-			--host=$RESTORE_MYSQL_HOST --port=$RESTORE_MYSQL_PORT \
-		"
-	else	# use unix socket is set and not empty
-		RESTORE_MYSQL_OPTIONS="$RESTORE_MYSQL_OPTIONS \
-			--socket=$RESTORE_MYSQL_SOCKET \
-		"
-	fi
-
+	
 	BACKUP_TIMESTAMP="$2"
 	DESTINATION="${3:-/backups/restore}"
 	BACKUP=`find $BACKUP_DIRECTORY -mindepth 2 -maxdepth 2 -type d -name $BACKUP_TIMESTAMP -exec ls -dt {} \+ | head -1`
@@ -425,42 +419,62 @@ elif [ "$1" = "restore" ]; then
 			echo "Copying data files to destination..."
 			$RSYNC_COMMAND --quiet -ah --delete $BACKUP/ $DESTINATION &>> $LOG_FILE || fail
 			echo -e "...done.\n"
-		
-			echo "Preparing the destination for use with MySQL..."
 
-			# 1. unzip
-			echo -e "1/4. unzip..."
-			RESTORE_ME=$DESTINATION/restoreme.xbstream
-			pigz -dc $DESTINATION/*.gz > $RESTORE_ME || fail
-			# 2. unpack
-			# rm -rf ${myrestoredir}/*
-			echo -e "2/4. xbstream..."
-			xbstream -x <  $RESTORE_ME -C $DESTINATION/ &>>$LOG_FILE || fail
-			# 3. decompress
-			echo -e "3/4. decompress..."
-			$INNOBACKUPEX_COMMAND --decompress --parallel=4 $DESTINATION &>>$LOG_FILE || fail
-			# 4. prepare
-			echo -e "4/4. prepare..."
-			$INNOBACKUPEX_COMMAND --apply-log --export $DESTINATION || fail
-			# $INNOBACKUPEX_COMMAND --apply-log $DESTINATION &>>$LOG_FILE || fail
-			# 5. copy back: restore
-			# mv ~mysql/data ~mysql/data_${mydt}
-			# mkdir ~mysql/data
-			# echo -e "restore..."
-			# $INNOBACKUPEX_COMMAND --copy-back --parallel=4 $DESTINATION &>>$LOG_FILE || fail
-			# 
-			# run DDL
+			if [[ -f $(ls $DESTINATION/DDL_*.sql) ]]; then
+				# 1. unzip
+				echo "1/4. unzip... "
+				RESTORE_ME=$DESTINATION/restoreme.xbstream
+				pigz -dc $DESTINATION/*.gz > $RESTORE_ME || fail
+				echo -e "done.\n"
+				# 2. unpack
+				# rm -rf ${myrestoredir}/*
+				echo "2/4. xbstream... "
+				xbstream -x <  $RESTORE_ME -C $DESTINATION/ &>>$LOG_FILE || fail
+				echo -e "done.\n"
+				# 3. decompress
+				echo "3/4. decompress... "
+				$INNOBACKUPEX_COMMAND --decompress --parallel=4 $DESTINATION &>>$LOG_FILE || fail
+				echo -e "done.\n"
+				# 4. prepare
+				echo "4/4. prepare... "
+				$INNOBACKUPEX_COMMAND --apply-log --export $DESTINATION &>>$LOG_FILE || fail
+				echo -e "done.\n"
 
-			
-			echo -e "5. Run DDL on database"
-			${MYSQL_COMMAND} ${RESTORE_MYSQL_OPTIONS} -N < $DESTINATION/DDL_${BACKUP_TIMESTAMP}.sql
+				if [ "$RESTORE_MODE" = "full" ]; then
 
-			echo -e "6. Get tables list to import"
-			IMPORT_TABLES_LIST=$(ls $DESTINATION/**/*.exp)
-			import_tables $IMPORT_TABLES_LIST 
-			
-			# $INNOBACKUPEX_COMMAND --apply-log --ibbackup=xtrabackup_51 $DESTINATION  &>> $LOG_FILE || fail
-			echo -e "...done.\n"
+					## Check RESTORE_MYSQL
+					[ -d $RESTORE_MYSQL_DATA_DIR ] || die "Please ensure the RESTORE_MYSQL_DATA_DIR setting in the configuration file points to the directory containing the MySQL databases."
+					[ -n "$RESTORE_MYSQL_USER" -a -n "$RESTORE_MYSQL_PASS" ] || die "Please ensure RESTORE_MYSQL username and password are properly set in the configuration file."
+
+					RESTORE_MYSQL_CNF=/restore/.my.cnf
+					echo -e "[client]\n user = $RESTORE_MYSQL_USER \n password = $RESTORE_MYSQL_PASS" > $RESTORE_MYSQL_CNF
+					RESTORE_MYSQL_OPTIONS="--defaults-extra-file=$RESTORE_MYSQL_CNF" # "--user=$MYSQL_USER --password=$MYSQL_PASS"
+					if [ -z "$RESTORE_MYSQL_SOCKET" ]; then # unset or empty
+						RESTORE_MYSQL_OPTIONS="$RESTORE_MYSQL_OPTIONS \
+							--host=$RESTORE_MYSQL_HOST --port=$RESTORE_MYSQL_PORT \
+						"
+					else	# use unix socket is set and not empty
+						RESTORE_MYSQL_OPTIONS="$RESTORE_MYSQL_OPTIONS \
+							--socket=$RESTORE_MYSQL_SOCKET \
+						"
+					fi
+
+					echo "5. Run DDL on database..."
+					${MYSQL_COMMAND} ${RESTORE_MYSQL_OPTIONS} -N < $DESTINATION/DDL_${BACKUP_TIMESTAMP}.sql &>>$LOG_FILE || fail
+					echo -e "done.\n"
+
+					echo "6. Get tables list and import them from backup..."
+					IMPORT_TABLES_LIST=$(ls $DESTINATION/**/*.exp)
+					import_tables "$IMPORT_TABLES_LIST"
+					echo -e "done.\n"
+
+				fi # RESTORE_MODE full
+			else
+				echo "Preparing the destination for use with MySQL... "
+				$INNOBACKUPEX_COMMAND --apply-log --ibbackup=xtrabackup_51 $DESTINATION  &>> $LOG_FILE || fail
+				echo -e "done.\n"
+			fi
+			echo -e "Restore has been done.\n"
 		else # incremental restore
 			XTRABACKUP=$(which xtrabackup)
 			
