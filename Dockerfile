@@ -21,9 +21,10 @@ RUN set -ex; \
     percona-release enable original release
 
 RUN yum install -y \
-	pigz percona-xtrabackup-24 percona-toolkit qpress bash which \
+	pigz percona-xtrabackup-24 percona-toolkit qpress bash which mysql \
 	&& yum clean all \
-	&& mkdir -p /backups && mkdir -p /var/lib/mysql
+	&& mkdir -p /backups && mkdir -p /var/lib/mysql && mkdir -p /restore/mysql \
+    && chown -R mysql:mysql /restore
 
 ENV SUPERCRONIC_URL=https://github.com/aptible/supercronic/releases/download/v0.1.9/supercronic-linux-amd64 \
     SUPERCRONIC=supercronic-linux-amd64 \
@@ -38,7 +39,7 @@ RUN curl -fsSLO "$SUPERCRONIC_URL" \
 USER mysql
 
 # Allow mountable backup path
-VOLUME ["/backups","/var/lib/mysql","/hooks","/etc/crontabs"]
+VOLUME ["/backups","/restore/mysql","/var/lib/mysql","/hooks","/etc/crontabs"]
 
 # Copy the script to simplify backup command
 COPY backup.sh /backup.sh
