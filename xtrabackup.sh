@@ -134,7 +134,6 @@ fi
 INNOBACKUPEX_COMMAND="$(which nice) -n 15 $IONICE_COMMAND $INNOBACKUPEX"
 RSYNC_COMMAND="$(which nice) -n 15 $IONICE_COMMAND  $(which rsync)"
 MYSQL_COMMAND="$(which nice) -n 15 $IONICE_COMMAND $MYSQL"
-echo "MySQL command: $MYSQL_COMMAND"
 
 MYSQL_CNF=/backups/.my.cnf
 echo -e "[client]\n user = $MYSQL_USER \n password = $MYSQL_PASS" > $MYSQL_CNF
